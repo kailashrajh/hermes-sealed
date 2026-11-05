@@ -97,6 +97,10 @@ cd ~/.hermes/hermes-agent && venv/bin/python /path/to/scripts/smoke.py   # 26 co
 hermes plugins validate plugins/sealed --install-deps
 ```
 
+It also passes Hermes's own contract kit (`tests/secret_sources/conformance.py`, 10 checks) —
+subclass `SecretSourceConformance` with a `source` fixture returning `SealedSource()` and run it
+from a hermes-agent checkout.
+
 ## Disclosure
 
 - **Network:** none.
