@@ -1,0 +1,10 @@
+name: sealed
+version: 1.0.0
+description: "Encrypted, offline secret store — AES-256-GCM env file loaded as a Hermes secret source."
+author: kailashrajh
+license: MIT
+homepage: https://github.com/kailashrajh/hermes-sealed
+requires_hermes: ">=0.22.0"
+python_dependencies:
+  - "cryptography>=42,<51"
+tags: [secrets, security, encryption, offline, local-first]
