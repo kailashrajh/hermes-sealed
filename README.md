@@ -27,6 +27,20 @@ hermes sealed set OPENAI_API_KEY         # value read from the prompt or stdin, 
   key sits on the same machine, and a process running as you can read it. It defends against
   accidental exposure, not against a compromised host.
 
+### Where it sits
+
+| option | encrypted at rest | cross-platform | external service / keyring | setup |
+|---|---|---|---|---|
+| `~/.hermes/.env` | no | yes | none | none |
+| **sealed** | **yes (AES-256-GCM)** | **yes** | **none — one key file** | one command |
+| `pass` | yes (GPG) | yes | GPG key + `pass` binary | GPG key, store |
+| Windows DPAPI | yes (per Windows user) | Windows only | none | one command |
+| 1Password / Bitwarden | yes | yes | account + network | account, CLI, login |
+
+`sealed` is for the box where you want a lock without adopting a password manager, an OS
+keyring, or a platform-specific API — and where `cryptography` is already a reasonable
+dependency.
+
 ## Install
 
 From the catalog (once listed):
