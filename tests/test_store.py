@@ -139,6 +139,21 @@ def test_dump_dotenv_roundtrips_awkward_values():
     assert parse_dotenv(dump_dotenv(values)) == values
 
 
+def test_backslashes_survive_a_store_roundtrip():
+    # Regression: values with backslashes were doubled on every read (C:\new -> C:\\new).
+    values = {
+        "WIN_PATH": r"C:\new\secret\key",
+        "REGEX": r"a\b",
+        "TRAIL": "ends\\",
+    }
+    assert parse_dotenv(dump_dotenv(values)) == values
+
+
+def test_every_escaped_character_roundtrips():
+    values = {"MIX": 'a\\b "c" \n d\te'}
+    assert parse_dotenv(dump_dotenv(values)) == values
+
+
 def test_replace_and_remove():
     values = {"A": "1"}
     assert replace_entry(values, "B", "2") == {"A": "1", "B": "2"}

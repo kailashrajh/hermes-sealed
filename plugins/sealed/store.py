@@ -125,6 +125,26 @@ def decrypt(key: bytes, data: bytes) -> str:
 # -- dotenv ----------------------------------------------------------------
 
 
+_ESCAPES = {"n": "\n", "t": "\t", '"': '"', "\\": "\\"}
+
+
+def _unescape_double_quoted(value: str) -> str:
+    """Undo dump_dotenv's escaping: ``\\\\`` → ``\\``, ``\\n`` → newline, ``\\\"`` → quote."""
+    out: list[str] = []
+    index = 0
+    while index < len(value):
+        char = value[index]
+        if char == "\\" and index + 1 < len(value):
+            nxt = value[index + 1]
+            if nxt in _ESCAPES:
+                out.append(_ESCAPES[nxt])
+                index += 2
+                continue
+        out.append(char)
+        index += 1
+    return "".join(out)
+
+
 def parse_dotenv(text: str) -> dict[str, str]:
     """Parse ``KEY=value`` lines. Comments and blank lines ignored.
 
@@ -149,7 +169,7 @@ def parse_dotenv(text: str) -> dict[str, str]:
             quote = value[0]
             value = value[1:-1]
             if quote == '"':
-                value = value.replace("\\n", "\n").replace("\\t", "\t").replace('\\"', '"')
+                value = _unescape_double_quoted(value)
         values[name] = value
     return values
 
