@@ -70,7 +70,8 @@ def read_key(path: Path) -> bytes:
 
 def write_key(path: Path, key: bytes | None = None) -> bytes:
     """Create a key file with O_EXCL. Never overwrites an existing key."""
-    key = key or generate_key()
+    if key is None:
+        key = generate_key()
     if len(key) != KEY_BYTES:
         raise SealedError(f"key must be {KEY_BYTES} bytes")
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -125,7 +126,7 @@ def decrypt(key: bytes, data: bytes) -> str:
 # -- dotenv ----------------------------------------------------------------
 
 
-_ESCAPES = {"n": "\n", "t": "\t", '"': '"', "\\": "\\"}
+_ESCAPES = {"n": "\n", "t": "\t", "r": "\r", '"': '"', "\\": "\\"}
 
 
 def _unescape_double_quoted(value: str) -> str:
@@ -152,7 +153,7 @@ def parse_dotenv(text: str) -> dict[str, str]:
     double quotes. Multi-line values are not supported — one line per secret.
     """
     values: dict[str, str] = {}
-    for raw_line in text.splitlines():
+    for raw_line in text.split("\n"):
         line = raw_line.strip()
         if not line or line.startswith("#"):
             continue
@@ -180,7 +181,7 @@ def dump_dotenv(values: dict[str, str]) -> str:
     for name in sorted(values):
         value = values[name]
         if value == "" or any(ch in value for ch in " \t\n#\"'\\$"):
-            escaped = value.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n").replace("\t", "\\t")
+            escaped = value.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n").replace("\t", "\\t").replace("\r", "\\r")
             lines.append(f'{name}="{escaped}"')
         else:
             lines.append(f"{name}={value}")
@@ -237,6 +238,8 @@ def file_mode(path: Path) -> int | None:
 
 
 def mode_is_private(mode: int | None) -> bool:
+    if os.name == "nt":
+        return mode is not None
     return mode is not None and (mode & (stat.S_IRWXG | stat.S_IRWXO)) == 0
 
 

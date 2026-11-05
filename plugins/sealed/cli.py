@@ -60,8 +60,31 @@ def _home() -> Path:
 
 def _paths(args: argparse.Namespace) -> tuple[Path, Path]:
     home = _home()
-    store = Path(args.store).expanduser() if getattr(args, "store", None) else home / "secrets" / "sealed.store"
-    key = Path(args.key_file).expanduser() if getattr(args, "key_file", None) else home / "secrets" / "sealed.key"
+    cfg: dict = {}
+    try:
+        from hermes_cli.config import load_config
+
+        cfg = (load_config().get("secrets") or {}).get("sealed") or {}
+    except Exception:
+        cfg = {}
+    store_arg = getattr(args, "store", None)
+    key_arg = getattr(args, "key_file", None)
+    if store_arg:
+        store = Path(store_arg).expanduser()
+    elif cfg.get("store"):
+        store = Path(cfg["store"]).expanduser()
+        if not store.is_absolute():
+            store = home / store
+    else:
+        store = home / "secrets" / "sealed.store"
+    if key_arg:
+        key = Path(key_arg).expanduser()
+    elif cfg.get("key_file"):
+        key = Path(cfg["key_file"]).expanduser()
+        if not key.is_absolute():
+            key = home / key
+    else:
+        key = home / "secrets" / "sealed.key"
     return store, key
 
 
@@ -73,7 +96,7 @@ def _load(store_path: Path, key_path: Path) -> tuple[bytes, dict[str, str]]:
 def _read_value(prompt: str) -> str:
     if sys.stdin.isatty():
         return getpass.getpass(prompt)
-    return sys.stdin.read().rstrip("\n")
+    return sys.stdin.read().rstrip("\r\n")
 
 
 def cmd_init(args: argparse.Namespace) -> int:
@@ -90,20 +113,42 @@ def cmd_init(args: argparse.Namespace) -> int:
         try:
             _, existing = _load(store_path, key_path)
         except SealedError as exc:
-            print(f"cannot read the existing store: {exc}")
-            return 1
+            if not args.force:
+                print(f"cannot read the existing store: {exc}")
+                return 1
+            print(f"warning: existing store is unreadable ({exc}); initialising empty")
+            existing = {}
         backup = store_path.with_suffix(store_path.suffix + ".bak")
-        shutil.copy2(store_path, backup)
+        fd = os.open(backup, os.O_CREAT | os.O_TRUNC | os.O_WRONLY, 0o600)
+        try:
+            os.write(fd, store_path.read_bytes() if store_path.exists() else b"")
+        finally:
+            os.close(fd)
         os.chmod(backup, 0o600)
         print(f"backup written: {backup}")
     if key_path.exists():
         old_key = key_path.with_suffix(key_path.suffix + ".bak")
-        shutil.copy2(key_path, old_key)
+        fd = os.open(old_key, os.O_CREAT | os.O_TRUNC | os.O_WRONLY, 0o600)
+        try:
+            os.write(fd, key_path.read_bytes())
+        finally:
+            os.close(fd)
         os.chmod(old_key, 0o600)
-        key_path.unlink()
         print(f"old key saved: {old_key}")
-    key = write_key(key_path)
-    write_store(store_path, key, existing)
+    # Write the store before the key: a crash leaves the old key readable.
+    new_key = generate_key()
+    write_store(store_path, new_key, existing)
+    # Key last, written atomically: a crash leaves the old key (or no key) readable.
+    tmp = key_path.with_name(f".{key_path.name}.{os.getpid()}.new")
+    fd = os.open(tmp, os.O_CREAT | os.O_TRUNC | os.O_WRONLY, 0o600)
+    try:
+        os.write(fd, new_key)
+    finally:
+        os.close(fd)
+    os.chmod(tmp, 0o600)
+    os.replace(tmp, key_path)
+    print(f"key:   {key_path} (0600)")
+    print(f"store: {store_path} (0o600, {len(existing)} entries)")
     print(f"key:   {key_path} (0600)")
     print(f"store: {store_path} (0600, {len(existing)} entries)")
     print()
@@ -203,13 +248,21 @@ def cmd_rotate(args: argparse.Namespace) -> int:
         print(exc)
         return 1
     backup = key_path.with_suffix(key_path.suffix + ".bak")
-    shutil.copy2(key_path, backup)
+    fd = os.open(backup, os.O_CREAT | os.O_TRUNC | os.O_WRONLY, 0o600)
+    try:
+        os.write(fd, key_path.read_bytes())
+    finally:
+        os.close(fd)
     os.chmod(backup, 0o600)
     new_key = generate_key()
     write_store(store_path, new_key, values)
     # Key last: a crash between the two leaves the store readable by the backup key.
     tmp = key_path.with_name(f".{key_path.name}.{os.getpid()}.new")
-    tmp.write_bytes(new_key)
+    fd = os.open(tmp, os.O_CREAT | os.O_TRUNC | os.O_WRONLY, 0o600)
+    try:
+        os.write(fd, new_key)
+    finally:
+        os.close(fd)
     os.chmod(tmp, 0o600)
     os.replace(tmp, key_path)
     print(f"rotated key for {len(values)} entries; previous key saved at {backup}")
@@ -224,7 +277,7 @@ def cmd_import(args: argparse.Namespace) -> int:
         print(f"not a file: {source}")
         return 1
     try:
-        incoming = parse_dotenv(source.read_text(encoding="utf-8", errors="replace"))
+        incoming = {name: value for name, value in parse_dotenv(source.read_text(encoding="utf-8", errors="replace")).items() if value}
     except OSError as exc:
         print(f"cannot read {source}: {exc}")
         return 1
