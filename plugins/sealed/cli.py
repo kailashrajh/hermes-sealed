@@ -29,33 +29,35 @@ try:  # loaded as <plugin>.cli
         write_key,
         write_store,
     )
-except ImportError:  # pragma: no cover - direct import in tests
-    from store import (  # type: ignore
-        SealedError,
-        dump_dotenv,
-        generate_key,
-        inspect,
-        mode_is_private,
-        parse_dotenv,
-        read_key,
-        read_store,
-        remove_entry,
-        replace_entry,
-        write_key,
-        write_store,
-    )
+except ImportError:  # direct execution: load the sibling store.py, never a stray module
+    import importlib.util
+
+    _spec = importlib.util.spec_from_file_location("sealed_store", Path(__file__).with_name("store.py"))
+    _store = importlib.util.module_from_spec(_spec)
+    sys.modules["sealed_store"] = _store
+    _spec.loader.exec_module(_store)
+    SealedError = _store.SealedError
+    dump_dotenv = _store.dump_dotenv
+    generate_key = _store.generate_key
+    inspect = _store.inspect
+    mode_is_private = _store.mode_is_private
+    parse_dotenv = _store.parse_dotenv
+    read_key = _store.read_key
+    read_store = _store.read_store
+    remove_entry = _store.remove_entry
+    replace_entry = _store.replace_entry
+    write_key = _store.write_key
+    write_store = _store.write_store
 
 
 def _home() -> Path:
-    raw = os.environ.get("HERMES_HOME", "").strip()
-    if raw:
-        return Path(raw).expanduser()
     try:
         from hermes_constants import get_hermes_home
 
         return Path(get_hermes_home())
     except Exception:
-        return Path.home() / ".hermes"
+        raw = os.environ.get("HERMES_HOME", "").strip()
+        return Path(raw).expanduser() if raw else Path.home() / ".hermes"
 
 
 def _paths(args: argparse.Namespace) -> tuple[Path, Path]:
@@ -270,34 +272,6 @@ def cmd_rotate(args: argparse.Namespace) -> int:
     return 0
 
 
-def cmd_import(args: argparse.Namespace) -> int:
-    store_path, key_path = _paths(args)
-    source = Path(args.path).expanduser()
-    if not source.is_file():
-        print(f"not a file: {source}")
-        return 1
-    try:
-        incoming = {name: value for name, value in parse_dotenv(source.read_text(encoding="utf-8", errors="replace")).items() if value}
-    except OSError as exc:
-        print(f"cannot read {source}: {exc}")
-        return 1
-    if not incoming:
-        print("no KEY=value lines found")
-        return 1
-    try:
-        key, values = _load(store_path, key_path)
-    except SealedError as exc:
-        print(f"{exc}\nRun `hermes sealed init` first.")
-        return 1
-    merged = dict(values)
-    merged.update(incoming)
-    write_store(store_path, key, merged)
-    added = len(set(incoming) - set(values))
-    print(f"imported {len(incoming)} entries ({added} new) — now {len(merged)} total")
-    print(f"the plaintext source {source} is unchanged; delete it when you are ready")
-    return 0
-
-
 def build_parser(subparser) -> None:
     sub = subparser.add_subparsers(dest="sealed_command")
     for name, help_text, handler in (
@@ -307,26 +281,23 @@ def build_parser(subparser) -> None:
         ("list", "List variable names (never values)", cmd_list),
         ("status", "Show paths, permissions, entry count and enablement", cmd_status),
         ("rotate", "Re-encrypt the store under a new key", cmd_rotate),
-        ("import", "Merge a plaintext .env file into the store", cmd_import),
     ):
         parser = sub.add_parser(name, help=help_text)
         parser.set_defaults(func=handler)
-        if name in ("init", "rotate", "import", "status", "list", "set", "unset"):
+        if name in ("init", "rotate", "status", "list", "set", "unset"):
             parser.add_argument("--store", help="Store path (default: $HERMES_HOME/secrets/sealed.store)")
             parser.add_argument("--key-file", dest="key_file", help="Key path (default: $HERMES_HOME/secrets/sealed.key)")
         if name == "init":
             parser.add_argument("--force", action="store_true", help="Re-initialise, keeping existing entries")
         if name in ("set", "unset"):
             parser.add_argument("name", help="Environment variable name")
-        if name == "import":
-            parser.add_argument("path", help="Path to a plaintext .env file")
     subparser.set_defaults(func=dispatch)
 
 
 def dispatch(args: argparse.Namespace) -> int:
     handler = getattr(args, "func", None)
     if handler is None or handler is dispatch:
-        print("usage: hermes sealed {init|set|unset|list|status|rotate|import}")
+        print("usage: hermes sealed {init|set|unset|list|status|rotate}")
         return 1
     try:
         return handler(args)

@@ -9,7 +9,6 @@ and its transcripts never see a value.
 
 ```bash
 hermes sealed init                       # key + empty store, both 0600
-hermes sealed import ~/.hermes/.env      # migrate what you already have
 hermes config set secrets.sealed.enabled true
 hermes sealed set OPENAI_API_KEY         # value read from the prompt or stdin, never argv
 ```
@@ -86,7 +85,6 @@ yields to any `mapped` source that explicitly binds a variable, as the framework
 | `hermes sealed list` | Names and value lengths only, never values |
 | `hermes sealed status` | Paths, file modes, entry count, whether the source is enabled |
 | `hermes sealed rotate` | Re-encrypt under a new key, keeping the old key as `.bak` |
-| `hermes sealed import PATH` | Merge a plaintext `.env` file (the file is left in place; delete it yourself) |
 
 Every command prints names, counts and paths — never a value. That is deliberate: a secret that
 reaches stdout reaches scrollback, shell history and any transcript of the session.
@@ -120,7 +118,6 @@ from a hermes-agent checkout.
 - **Network:** none.
 - **Reads:** the configured `store` and `key_file` only, at startup, once per process.
 - **Writes:** only from the CLI, only to the store/key paths (plus `.bak` copies on `init --force`
-  and `rotate`). `import` reads the plaintext file you name and never modifies it.
 - **No telemetry, no self-updater, no background process.**
 
 ## License

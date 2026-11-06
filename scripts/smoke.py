@@ -97,7 +97,7 @@ def main() -> int:
     check("strict_permissions refuses", not result.ok and result.error_kind.value == "auth_failed", result.error)
     os.chmod(store_path, 0o600)
 
-    # 6. CLI: status, list, import, rotate.
+    # 6. CLI: status, list, rotate.
     cli = sys.modules["plugins.sealed_smoke.cli"]
     args = type("A", (), {"store": None, "key_file": None, "sealed_command": "status"})()
 
@@ -109,21 +109,11 @@ def main() -> int:
     check("status never prints a value", "sk-smoke" not in output, output)
     check("status reports entries", "entries: 2" in output, output)
 
-    import_file = tmp / "plain.env"
-    import_file.write_text("NEW_VAR=from-plaintext\nOPENAI_API_KEY=rotated\n", encoding="utf-8")
-    buffer = io.StringIO()
-    with redirect_stdout(buffer):
-        code = cli.cmd_import(type("A", (), {"store": None, "key_file": None, "path": str(import_file)})())
-    check("import merges", code == 0, buffer.getvalue())
-    result = source.fetch({"enabled": True}, home)
-    check("imported value visible", result.secrets.get("NEW_VAR") == "from-plaintext", result.secrets)
-    check("import overrode existing", result.secrets.get("OPENAI_API_KEY") == "rotated")
-
     buffer = io.StringIO()
     with redirect_stdout(buffer):
         code = cli.cmd_rotate(type("A", (), {"store": None, "key_file": None})())
     check("rotate succeeds", code == 0, buffer.getvalue())
-    check("fetch works after rotation", source.fetch({"enabled": True}, home).secrets.get("NEW_VAR") == "from-plaintext")
+    check("fetch works after rotation", source.fetch({"enabled": True}, home).secrets.get("OPENAI_API_KEY") == "sk-smoke")
 
     print(f"\n{'FAILED: ' + ', '.join(failures) if failures else 'all checks passed'}")
     print(f"workspace: {tmp}")
